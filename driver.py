@@ -76,15 +76,23 @@ class Driver:
     def trip_time(self, trip_idx):
         return len(self.trips[trip_idx])
 
-    def compute_angular_velocities_and_accelerations(self):
+    def compute_velocities(self):
         tmpary = []
         for trip in self.trips_polar:
-            trip_tmpary = []
-            for i in xrange(len(trip) - 1):
-                trip_tmpary.append((trip[i + 1][0] - trip[i][0], trip[i + 1][1] - trip[i][1]))
-            tmpary.append(trip_tmpary)
+            tmpary.append(numpy.diff(trip, axis = 0))
 
-        return numpy.array(tmpary)
+        # array of arrays of (velocity, angular_velocity)
+        self.velocities = numpy.array(tmpary)
+        return self.velocities
+
+    def compute_accelerations(self):
+        tmpary = []
+        for trip in self.velocities:
+            tmpary.append(numpy.diff(trip, axis = 0))
+
+        # array of arrays of (velocity, angular_velocity)
+        self.accelerations = numpy.array(tmpary)
+        return self.accelerations
 
     def average_distance_traveled(self):
         total_distance = sum((self.distance_traveled(i) for i in xrange(len(self.trips))))
@@ -140,6 +148,8 @@ input_path = sys.argv[1]
 # drivers, stats = produce_global_stats(input_path)
 
 driver = Driver(input_path)
-data = driver.compute_angular_velocities_and_accelerations()
+velocs = driver.compute_velocities()
+accels = driver.compute_accelerations()
 
-print data[0]
+print velocs[10]
+print accels[10]
