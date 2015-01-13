@@ -26,7 +26,7 @@ def convert_to_polar(coords1, coords2):
     else:
         theta = math.atan(dy / dx)
 
-    return (r, theta)
+    return [r, theta]
 
 class Driver:
     def __init__(self, path):
@@ -39,30 +39,52 @@ class Driver:
         print "Loaded driver %s with %d trips" % (self.driver_id, len(self.trips))
 
     def _load_trips(self):
+        rect_trips = []
+        polar_trips = []
+
         for fname in self.files:
             with open(join(self.path, fname), 'rb') as f:
                 tripf = csv.reader(f)
                 tripf.next()  # header row
                 coords = [(float(row[0]), float(row[1])) for row in tripf]
 
-            self.trips.append(numpy.array(coords))
+            rect_trips.append(numpy.array(coords))
 
             coords_polar = []
+            initial_theta = None
             for i in xrange(len(coords) - 1):
-                pcoords = convert_to_polar(coords[i], coords[i + 1])
+                r, theta = convert_to_polar(coords[i], coords[i + 1])
 
-                if pcoords[1] is None and len(coords_polar) > 0:
-                    pcoords = (pcoords[0], coords_polar[i - 1][1])
+                if initial_theta is None:
+                    initial_theta = theta or 0.0
+                    pcoords = (r, 0.0)
+                elif theta is None and len(coords_polar) > 0:
+                    pcoords = (r, coords_polar[i - 1][1])
+                else:
+                    pcoords = (r, theta - initial_theta)
 
                 coords_polar.append(pcoords)
 
-            self.trips_polar.append(numpy.array(coords_polar))
+            polar_trips.append(numpy.array(coords_polar))
+
+        self.trips = numpy.array(rect_trips)
+        self.trips_polar = numpy.array(polar_trips)
 
     def distance_traveled(self, trip_idx):
         return sum((r[0] for r in self.trips_polar[trip_idx]))
 
     def trip_time(self, trip_idx):
         return len(self.trips[trip_idx])
+
+    def compute_angular_velocities_and_accelerations(self):
+        tmpary = []
+        for trip in self.trips_polar:
+            trip_tmpary = []
+            for i in xrange(len(trip) - 1):
+                trip_tmpary.append((trip[i + 1][0] - trip[i][0], trip[i + 1][1] - trip[i][1]))
+            tmpary.append(trip_tmpary)
+
+        return numpy.array(tmpary)
 
     def average_distance_traveled(self):
         total_distance = sum((self.distance_traveled(i) for i in xrange(len(self.trips))))
@@ -84,24 +106,40 @@ class Driver:
 
         return [self.driver_id, mean_distance, mean_time, max_distance, median_distance, min_distance, max_time, median_time, min_time]
 
-
     def build_features(self, trip):
         features = {}
         features[1] = 0.0 # average acceleration/deceleration
         features[2] = 0.0 # average
 
 
+def load_drivers(input_path):
+    driver_paths = [join(input_path, dirname) for dirname in listdir(input_path) if not isfile(join(input_path, dirname))]
+    drivers = [Driver(path) for path in driver_paths]
+
+    return drivers
+
+def produce_global_stats(input_path):
+    drivers = load_drivers(input_path)
+    all_stats = []
+
+    with open("driver_stats.csv", 'wb') as f:
+        tripf = csv.writer(f)
+        tripf.writerow(['DriverId', 'MeanDistance', 'MeanTime', 'MaxDistance', 'MedianDistance', 'MinDistance', 'MaxTime', 'MedianTime', 'MinTime'])
+
+        for driver in drivers:
+            stats = driver.summary_stats()
+            tripf.writerow(stats)
+            all_stats.append(stats)
+            print stats
+
+    print "loaded all drivers"
+    return drivers, stats
+
 input_path = sys.argv[1]
-driver_paths = [join(input_path, dirname) for dirname in listdir(input_path) if not isfile(join(input_path, dirname))]
-drivers = [Driver(path) for path in driver_paths]
 
-with open("driver_stats.csv", 'wb') as f:
-    tripf = csv.writer(f)
-    tripf.writerow(['DriverId', 'MeanDistance', 'MeanTime', 'MaxDistance', 'MedianDistance', 'MinDistance', 'MaxTime', 'MedianTime', 'MinTime'])
+# drivers, stats = produce_global_stats(input_path)
 
-    for driver in drivers:
-        stats = driver.summary_stats()
-        tripf.writerow(stats)
-        print stats
+driver = Driver(input_path)
+data = driver.compute_angular_velocities_and_accelerations()
 
-print "loaded all drivers"
+print data[0]
