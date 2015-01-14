@@ -32,7 +32,7 @@ class Driver:
     def __init__(self, path):
         self.path = path
         self.driver_id = path.split('/')[-1]
-        self.files = [fname for fname in listdir(path) if isfile(join(path, fname))]
+        self.trip_ids = sorted([int(fname.split('.')[0]) for fname in listdir(path) if isfile(join(path, fname))])
         self.trips = []
         self.trips_polar = []
         self._load_trips()
@@ -41,9 +41,12 @@ class Driver:
     def _load_trips(self):
         rect_trips = []
         polar_trips = []
+        self.files = []
 
-        for fname in self.files:
-            with open(join(self.path, fname), 'rb') as f:
+        for trip_id in self.trip_ids:
+            fname = join(self.path, "%d.csv" % (trip_id))
+            self.files.append(fname)
+            with open(fname, 'rb') as f:
                 tripf = csv.reader(f)
                 tripf.next()  # header row
                 coords = [(float(row[0]), float(row[1])) for row in tripf]
@@ -63,7 +66,7 @@ class Driver:
                 else:
                     pcoords = (r, theta - initial_theta)
 
-                coords_polar.append(pcoords)
+                coords_polar.append(numpy.array(pcoords))
 
             polar_trips.append(numpy.array(coords_polar))
 
@@ -76,18 +79,9 @@ class Driver:
     def trip_time(self, trip_idx):
         return len(self.trips[trip_idx])
 
-    def compute_velocities(self):
-        tmpary = []
-        for trip in self.trips_polar:
-            tmpary.append(numpy.diff(trip, axis = 0))
-
-        # array of arrays of (velocity, angular_velocity)
-        self.velocities = numpy.array(tmpary)
-        return self.velocities
-
     def compute_accelerations(self):
         tmpary = []
-        for trip in self.velocities:
+        for trip in self.trips_polar:
             tmpary.append(numpy.diff(trip, axis = 0))
 
         # array of arrays of (velocity, angular_velocity)
@@ -114,10 +108,45 @@ class Driver:
 
         return [self.driver_id, mean_distance, mean_time, max_distance, median_distance, min_distance, max_time, median_time, min_time]
 
-    def build_features(self, trip):
-        features = {}
-        features[1] = 0.0 # average acceleration/deceleration
-        features[2] = 0.0 # average
+    def build_features(self, sample_size = 0.25):
+        self.compute_accelerations()
+
+        features = []
+
+        for i in xrange(len(self.trips)):
+            # IDEAS:
+            # distance traveled, time of trip, mean velocity, mean acceleration, mean angular velocity, mean angular acceleration
+            row_features = []
+            row_features.append(self.distance_traveled(i))
+            row_features.append(len(self.trips[i]))
+
+            veloc_means = numpy.mean(self.trips_polar[i], axis = 0)
+            row_features.append(veloc_means[0])
+            row_features.append(veloc_means[1])
+
+            accel_means = numpy.mean(self.accelerations[i], axis = 0)
+            row_features.append(accel_means[0])
+            row_features.append(accel_means[1])
+
+            ratios = []
+            for j in xrange(len(self.accelerations[i])):
+                if self.accelerations[i][j][1] > math.pi / 16.0 and self.trips_polar[i][j + 1][0] > 0.33333:
+                    ratios.append(self.accelerations[i][j][1] / self.trips_polar[i][j + 1][0])
+            row_features.append(numpy.mean(ratios))
+
+            features.append(row_features)
+
+        numpy.random.shuffle(features)
+        num_samples = int(math.floor(sample_size * len(features)))
+
+        train_features = numpy.matrix(features[0:len(features) - num_samples])
+        test_features  = numpy.matrix(features[len(features) - num_samples:len(features)])
+
+        norm_train_features = (train_features - numpy.mean(train_features, axis = 0)) / numpy.std(train_features, axis = 0)
+        norm_test_features  = (test_features  - numpy.mean(train_features, axis = 0)) / numpy.std(train_features, axis = 0)
+
+        return [norm_train_features, norm_test_features]
+
 
 
 def load_drivers(input_path):
@@ -147,9 +176,25 @@ input_path = sys.argv[1]
 
 # drivers, stats = produce_global_stats(input_path)
 
-driver = Driver(input_path)
-velocs = driver.compute_velocities()
-accels = driver.compute_accelerations()
+driver1 = Driver(sys.argv[1])
+driver2 = Driver(sys.argv[2])
+train_features1, test_features1 = driver1.build_features(float(sys.argv[3]))
+train_features2, test_features2 = driver2.build_features(float(sys.argv[3]))
 
-print velocs[10]
-print accels[10]
+with open("train.dat", 'wb') as f:
+    for features in train_features1:
+        o = ["%d:%0.4f" % (i, features[i]) for i in xrange(len(features))].join(' ')
+        f.write("1 %s\n" % (o))
+
+    for features in train_features2:
+        o = ["%d:%0.4f" % (i, features[i]) for i in xrange(len(features))].join(' ')
+        f.write("-1 %s\n" % (o))
+
+with open("test.dat", 'wb') as f:
+    for features in test_features1:
+        o = ["%d:%0.4f" % (i, features[i]) for i in xrange(len(features))].join(' ')
+        f.write("1 %s\n" % (o))
+
+    for features in test_features2:
+        o = ["%d:%0.4f" % (i, features[i]) for i in xrange(len(features))].join(' ')
+        f.write("-1 %s\n" % (o))
