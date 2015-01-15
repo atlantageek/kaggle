@@ -28,10 +28,10 @@ def convert_to_polar(coords1, coords2):
 
     return [r, theta]
 
-class Driver:
+class Driver(object):
     def __init__(self, path):
         self.path = path
-        self.driver_id = path.split('/')[-1]
+        self.driver_id = int(path.split('/')[-1])
         self.trip_ids = sorted([int(fname.split('.')[0]) for fname in listdir(path) if isfile(join(path, fname))])
         self.trips = []
         self.trips_polar = []
@@ -53,7 +53,7 @@ class Driver:
 
             rect_trips.append(numpy.array(coords))
 
-            coords_polar = []
+            coords_polar = [numpy.array((0.0, 0.0))]
             initial_theta = None
             for i in xrange(len(coords) - 1):
                 r, theta = convert_to_polar(coords[i], coords[i + 1])
@@ -171,30 +171,3 @@ def produce_global_stats(input_path):
 
     print "loaded all drivers"
     return drivers, stats
-
-input_path = sys.argv[1]
-
-# drivers, stats = produce_global_stats(input_path)
-
-driver1 = Driver(sys.argv[1])
-driver2 = Driver(sys.argv[2])
-train_features1, test_features1 = driver1.build_features(float(sys.argv[3]))
-train_features2, test_features2 = driver2.build_features(float(sys.argv[3]))
-
-with open("train.dat", 'wb') as f:
-    for features in train_features1:
-        o = ["%d:%0.4f" % (i, features[i]) for i in xrange(len(features))].join(' ')
-        f.write("1 %s\n" % (o))
-
-    for features in train_features2:
-        o = ["%d:%0.4f" % (i, features[i]) for i in xrange(len(features))].join(' ')
-        f.write("-1 %s\n" % (o))
-
-with open("test.dat", 'wb') as f:
-    for features in test_features1:
-        o = ["%d:%0.4f" % (i, features[i]) for i in xrange(len(features))].join(' ')
-        f.write("1 %s\n" % (o))
-
-    for features in test_features2:
-        o = ["%d:%0.4f" % (i, features[i]) for i in xrange(len(features))].join(' ')
-        f.write("-1 %s\n" % (o))
