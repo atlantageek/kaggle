@@ -3,6 +3,7 @@ from os.path import isfile, join
 
 import sys
 import sqlite3
+import string
 from driver import Driver
 
 DB_PATH = "data/drivers.db"
@@ -39,6 +40,23 @@ def create_trips_table_indexes():
                     )''')
     DB.commit()
 
+def create_drivers_table(data_path):
+    c = DB.cursor()
+    c.execute('''CREATE TABLE IF NOT EXISTS drivers
+                    (
+                        id INTEGER,
+                        PRIMARY KEY (id)
+                    ) WITHOUT ROWID''')
+
+    driver_ids = sorted([int(dirname) for dirname in listdir(data_path) if not isfile(join(data_path, dirname))])
+
+    for driver_id in driver_ids:
+        c.execute("INSERT INTO drivers (id) VALUES (%d)" % (driver_id))
+
+    DB.commit()
+
+
+
 def populate_trips_table(data_path):
     create_trips_table()
     c = DB.cursor()
@@ -65,8 +83,14 @@ def populate_trips_table(data_path):
                 )
             DB.commit()
 
-print "Creating trips table..."
-create_trips_table()
 
-print "Populating trips table with data directory = %s" % (sys.argv[1])
-populate_trips_table(sys.argv[1])
+# data_path = sys.argv[1]
+
+# print "Creating drivers table with data directory = %s..." % (data_path)
+# create_drivers_table(data_path)
+
+# print "Creating trips table..."
+# create_trips_table()
+
+# print "Populating trips table with data directory = %s" % (data_path)
+# populate_trips_table(data_path)
