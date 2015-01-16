@@ -42,23 +42,3 @@ class Driver(object):
         norm_test_features  = (test_features  - numpy.mean(train_features, axis = 0)) / numpy.std(train_features, axis = 0)
 
         return [norm_train_features, norm_test_features]
-
-
-class Drivers(object):
-    def __init__(self, driver_ids = None):
-        self.drivers = {}
-
-        if driver_ids is None:
-            driver_ids = self._get_driver_ids()
-
-        for driver_id in driver_ids:
-            self.drivers[driver_id] = Driver(driver_id)
-
-    def _get_driver_ids(self):
-        c = DB.cursor()
-        driver_ids = [r[0] for r in c.execute("SELECT * FROM drivers")]
-        c.close()
-
-        return driver_ids
-
-    def format_features_for_output(self, driver_id):
