@@ -41,6 +41,6 @@ except lite.Error, e:
     print "Error %s:" % e.args[0]
     sys.exit(1)
 
-finally: 
-    if con: 
+finally:
+    if con:
         con.close()

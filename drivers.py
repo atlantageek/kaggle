@@ -48,9 +48,11 @@ class Drivers(object):
         train = numpy.array(train1)
         test = numpy.array(test1)
 
-        clf = svm.SVC()
+        clf = svm.SVC(probability = True, kernel = 'rbf', gamma = 0.25)
         clf.fit(train, training_targets)
 
         results = clf.predict(test)
+        probabilities = clf.predict_proba(test)
+        self.drivers[driver1_id].clf = clf
 
-        return [testing_targets, results]
+        return [testing_targets, results, probabilities, clf]

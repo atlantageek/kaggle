@@ -8,6 +8,7 @@ DB = sqlite3.connect(DB_PATH)
 class Driver(object):
     def __init__(self, driver_id):
         self.driver_id = int(driver_id)
+        self.clf = None
 
     # NOTE: rename this method and create a new one whenever you change the feature set
     def current_feature_set(self):
