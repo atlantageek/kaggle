@@ -2,8 +2,8 @@ import sqlite3
 import string
 import numpy
 import math
-import svmlight
 
+from sklearn import svm
 from driver import Driver
 
 DB_PATH = "data/drivers.db"
@@ -26,76 +26,31 @@ class Drivers(object):
 
         return driver_ids
 
-    def format_features_for_output(self, driver_id, sample_size = 0.2):
+    def features(self, driver_id, sample_size = 0.2):
         driver = self.drivers[driver_id]
         feature_set = driver.current_feature_set()
-        train, test = driver.build_features_from_feature_set(feature_set, sample_size)
+        return driver.build_features_from_feature_set(feature_set, sample_size)
 
-        output_train = []
-        output_test  = []
+    def experiment1(self, driver1_id, driver2_id):
+        otrain1, otest1 = self.features(driver1_id)
+        otrain2, otest2 = self.features(driver2_id)
 
-        def _format_row(ftrs):
-            return string.join(["%d:%0.6f" % (i + 1, ftrs[0, i]) for i in xrange(ftrs.shape[1])], ' ')
+        train1 = otrain1.tolist()
+        train2 = otrain2.tolist()
+        test1  = otest1.tolist()
+        test2  = otest2.tolist()
+        training_targets = numpy.array([1] * len(train1) + [-1] * len(train2))
+        testing_targets  = numpy.array([1] * len(test1) + [-1] * len(test2))
 
-        for i in xrange(len(train)):
-            row = train[i]
-            ftr_str = _format_row(row)
-            output_train.append(ftr_str)
-        for i in xrange(len(test)):
-            row = test[i]
-            ftr_str = _format_row(row)
-            output_test.append(ftr_str)
+        train1.extend(train2)
+        test1.extend(test2)
 
-        return [output_train, output_test]
+        train = numpy.array(train1)
+        test = numpy.array(test1)
 
-    def experiment1(self, path_and_prefix, driver1_id, driver2_id):
-        otrain1, otest1 = self.format_features_for_output(driver1_id)
-        otrain2, otest2 = self.format_features_for_output(driver2_id)
+        clf = svm.SVC()
+        clf.fit(train, training_targets)
 
-        train_filename = "%s-train.dat" % (path_and_prefix)
-        test_filename  = "%s-test.dat" % (path_and_prefix)
+        results = clf.predict(test)
 
-        expected_results = numpy.concatenate([numpy.ones(len(otest1)), numpy.zeros(len(otest2))])
-
-        with open(train_filename, 'wb') as trainf:
-            for line in otrain1:
-                trainf.write("1 %s\n" % (line))
-            for line in otrain2:
-                trainf.write("-1 %s\n" % (line))
-
-        with open(test_filename, 'wb') as testf:
-            for line in otest1:
-                testf.write("1 %s\n" % (line))
-            for line in otest2:
-                testf.write("-1 %s\n" % (line))
-
-        svm = svmlight.SVMLight(path_and_prefix)
-        results = svm.run()
-
-        print expected_results
-        print results
-
-        return self.pav(expected_results, results)
-
-    def pav(self, expected, results):
-        data = sorted(zip(expected, results, expected), key = lambda x: x[1])
-
-        output = []
-        grp = []
-
-        for i in xrange(0, len(data) - 1):
-            if data[i][0] > data[i + 1][0]:
-                if len(grp) > 0:
-                    avg = sum([x[0] for x in grp]) / float(len(grp))
-                    for g in grp:
-                        output.append((avg, g[1], g[2]))
-                grp = [data[i]]
-            else:
-                grp.append(data[i])
-
-        if len(grp) > 0:
-            avg = sum([x[0] for x in grp]) / float(len(grp))
-            for g in grp:
-                output.append((avg, g[1], g[2]))
-
-        return output
+        return [testing_targets, results]
