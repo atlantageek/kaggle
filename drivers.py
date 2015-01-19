@@ -32,8 +32,8 @@ class Drivers(object):
         return driver.build_features_from_feature_set(feature_set, sample_size)
 
     def experiment1(self, driver1_id, driver2_id):
-        otrain1, otest1 = self.features(driver1_id)
-        otrain2, otest2 = self.features(driver2_id)
+        otrain1, otest1, oall1 = self.features(driver1_id)
+        otrain2, otest2, oall2 = self.features(driver2_id)
 
         train1 = otrain1.tolist()
         train2 = otrain2.tolist()
@@ -55,4 +55,24 @@ class Drivers(object):
         probabilities = clf.predict_proba(test)
         self.drivers[driver1_id].clf = clf
 
-        return [testing_targets, results, probabilities, clf]
+        all_results = clf.predict(oall1)
+        all_probs   = clf.predict_proba(oall1)
+
+        return [testing_targets, results, probabilities, all_results, all_probs]
+
+    def full_experiment1(self):
+        with open("results/experiment1_full_1.csv", 'wb') as f:
+            for driver_id in self.drivers.keys():
+                driver = self.drivers[driver_id]
+
+                while True:
+                    other_driver_id = numpy.random.choice(self.drivers.keys())
+                    if other_driver_id != driver_id:
+                        break
+
+                exps, preds, probs, all_res, all_probs = self.experiment1(driver_id, other_driver_id)
+                for i in xrange(len(all_probs)):
+                    f.write("%d_%d,%0.6f\n" % (driver_id, i + 1, all_probs[i][1]))
+
+                acc = 1.0 - numpy.sum(numpy.abs((exps - preds) / 2)) / float(len(exps))
+                print "accuracy for driver %d = %0.6f" % (driver_id, acc)
