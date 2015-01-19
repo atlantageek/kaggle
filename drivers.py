@@ -14,10 +14,12 @@ class Drivers(object):
         self.drivers = {}
 
         if driver_ids is None:
-            driver_ids = self._get_driver_ids()
+            self.driver_ids = self._get_driver_ids()
+        else:
+            self.driver_ids = driver_ids[:]
 
-        for driver_id in driver_ids:
-            self.drivers[driver_id] = Driver(driver_id)
+        for driver_id in self.driver_ids:
+            self.drivers[driver_id] = {}
 
     def _get_driver_ids(self):
         c = DB.cursor()
@@ -26,51 +28,109 @@ class Drivers(object):
 
         return driver_ids
 
-    def features(self, driver_id, sample_size = 0.2):
-        driver = self.drivers[driver_id]
-        feature_set = driver.current_feature_set()
-        return driver.build_features_from_feature_set(feature_set, sample_size)
+    def features(self, driver_id):
+        num_trips = self.trip_count(driver_id)
+        trips = self.get_trip_stats(driver_id)
 
-    def experiment1(self, driver1_id, driver2_id):
-        otrain1, otest1, oall1 = self.features(driver1_id)
-        otrain2, otest2, oall2 = self.features(driver2_id)
+        if len(trips) != num_trips:
+            raise Exception("Length of trips does not match count from the database.")
 
-        train1 = otrain1.tolist()
-        train2 = otrain2.tolist()
-        test1  = otest1.tolist()
-        test2  = otest2.tolist()
-        training_targets = numpy.array([1] * len(train1) + [-1] * len(train2))
-        testing_targets  = numpy.array([1] * len(test1) + [-1] * len(test2))
+        return trips
 
-        train1.extend(train2)
-        test1.extend(test2)
+    def random_opposing_features(self, driver_id):
+        num_trips = self.trip_count(driver_id)
+        opp_trips = self.get_opposing_trip_stats(driver_id)
 
-        train = numpy.array(train1)
-        test = numpy.array(test1)
+        if len(opp_trips) != num_trips:
+            raise Exception("Length of opposing trips does not match count from the database.")
+
+        return opp_trips
+
+    def get_trip_stats(self, driver_id):
+        if self.drivers[driver_id].has_key('trips'):
+            return self.drivers[driver_id]['trips']
+
+        c = DB.cursor()
+        trips = []
+
+        for trip in c.execute("SELECT * FROM feature_set1 WHERE driver_id = %d ORDER BY trip_id ASC" % (driver_id)):
+            trips.append(trip[2:])
+
+        self.drivers[driver_id]['trips'] = numpy.array(trips)
+        return self.drivers[driver_id]['trips']
+
+    def get_opposing_trip_stats(self, driver_id):
+        if self.drivers[driver_id].has_key('opp_trips'):
+            return self.drivers[driver_id]['opp_trips']
+
+        num_to_oppose = self.trip_count(driver_id)
+
+        c = DB.cursor()
+        qry = """SELECT * FROM feature_set1
+                 WHERE driver_id != %d
+                 ORDER BY RANDOM() LIMIT %d""" % (driver_id, num_to_oppose)
+
+        opp_trips = []
+        for trip in c.execute(qry):
+            opp_trips.append(trip[2:])
+
+        self.drivers[driver_id]['opp_trips'] = numpy.array(opp_trips)
+        return self.drivers[driver_id]['opp_trips']
+
+    def trip_count(self, driver_id):
+        if self.drivers[driver_id].has_key('trip_count'):
+            return self.drivers[driver_id]['trip_count']
+
+        c = DB.cursor()
+        c.execute("SELECT COUNT(*) AS trip_count FROM feature_set1 WHERE driver_id = %d" % (driver_id))
+        r = c.fetchone()
+
+        self.drivers[driver_id]['trip_count'] = r[0]
+        return r[0]
+
+
+    def experiment1(self, driver_id, sample_size = 0.2):
+        base_pos = self.features(driver_id)
+        base_neg = self.random_opposing_features(driver_id)
+
+        base_pos_indexes = range(len(base_pos))
+        base_neg_indexes  = range(len(base_neg))
+
+        num_samples = math.floor(len(base_pos_indexes) * 0.2)
+        test_pos_idxs  = sorted(numpy.random.choice(base_pos_indexes, size = num_samples, replace = False))
+        train_pos_idxs = [i for i in base_pos_indexes if i not in test_pos_idxs]
+
+        test_neg_idxs  = sorted(numpy.random.choice(base_neg_indexes, size = num_samples, replace = False))
+        train_neg_idxs = [i for i in base_neg_indexes if i not in test_neg_idxs]
+
+        train = [base_pos[i] for i in train_pos_idxs] + [base_neg[i] for i in train_neg_idxs]
+        test  = [base_pos[i] for i in test_pos_idxs] + [base_neg[i] for i in test_neg_idxs]
+
+        training_targets = numpy.array([1] * len(train_pos_idxs) + [-1] * len(train_neg_idxs))
+        testing_targets  = numpy.array([1] * len(test_pos_idxs) + [-1] * len(test_neg_idxs))
 
         clf = svm.SVC(probability = True, kernel = 'rbf', gamma = 0.25)
         clf.fit(train, training_targets)
 
         results = clf.predict(test)
         probabilities = clf.predict_proba(test)
-        self.drivers[driver1_id].clf = clf
 
-        all_results = clf.predict(oall1)
-        all_probs   = clf.predict_proba(oall1)
+        base = numpy.array(base_pos.tolist() + base_neg.tolist())
+        base_targets = numpy.array([1] * len(base_pos) + [-1] * len(base_neg))
+
+        clf = svm.SVC(probability = True, kernel = 'rbf', gamma = 0.25)
+        clf.fit(base, base_targets)
+
+        all_results = clf.predict(base_pos)
+        all_probs   = clf.predict_proba(base_pos)
 
         return [testing_targets, results, probabilities, all_results, all_probs]
 
     def full_experiment1(self):
         with open("results/experiment1_full_1.csv", 'wb') as f:
-            for driver_id in self.drivers.keys():
-                driver = self.drivers[driver_id]
+            for driver_id in self.driver_ids:
+                exps, preds, probs, all_res, all_probs = self.experiment1(driver_id)
 
-                while True:
-                    other_driver_id = numpy.random.choice(self.drivers.keys())
-                    if other_driver_id != driver_id:
-                        break
-
-                exps, preds, probs, all_res, all_probs = self.experiment1(driver_id, other_driver_id)
                 for i in xrange(len(all_probs)):
                     f.write("%d_%d,%0.6f\n" % (driver_id, i + 1, all_probs[i][1]))
 
