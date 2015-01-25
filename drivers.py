@@ -64,11 +64,12 @@ class Drivers(object):
             return self.drivers[driver_id]['opp_trips']
 
         num_to_oppose = self.trip_count(driver_id)
+        opposing_driver_id = self.choose_random_opposing_driver_id(driver_id)
 
         c = DB.cursor()
         qry = """SELECT * FROM feature_set1
-                 WHERE driver_id != %d
-                 ORDER BY RANDOM() LIMIT %d""" % (driver_id, num_to_oppose)
+                 WHERE driver_id = %d
+                 ORDER BY trip_id ASC LIMIT %d""" % (opposing_driver_id, num_to_oppose)
 
         opp_trips = []
         for trip in c.execute(qry):
@@ -76,6 +77,13 @@ class Drivers(object):
 
         self.drivers[driver_id]['opp_trips'] = numpy.array(opp_trips)
         return self.drivers[driver_id]['opp_trips']
+
+    def choose_random_opposing_driver_id(self, driver_id):
+        while True:
+            opp_id = numpy.random.choice(self.driver_ids, size = 1, replace = False)
+            if opp_id != driver_id:
+                break
+        return opp_id
 
     def trip_count(self, driver_id):
         if self.drivers[driver_id].has_key('trip_count'):
@@ -104,7 +112,7 @@ class Drivers(object):
         train_neg_idxs = [i for i in base_neg_indexes if i not in test_neg_idxs]
 
         train = [base_pos[i] for i in train_pos_idxs] + [base_neg[i] for i in train_neg_idxs]
-        test  = [base_pos[i] for i in test_pos_idxs] + [base_neg[i] for i in test_neg_idxs]
+        test  = [base_pos[i] for i in test_pos_idxs]  + [base_neg[i] for i in test_neg_idxs]
 
         training_targets = numpy.array([1] * len(train_pos_idxs) + [-1] * len(train_neg_idxs))
         testing_targets  = numpy.array([1] * len(test_pos_idxs) + [-1] * len(test_neg_idxs))
@@ -126,8 +134,8 @@ class Drivers(object):
 
         return [testing_targets, results, probabilities, all_results, all_probs]
 
-    def full_experiment1(self):
-        with open("results/experiment1_full_1.csv", 'wb') as f:
+    def full_experiment1(self, run_id = 1):
+        with open("results/experiment1_full_%d.csv" % (run_id), 'wb') as f:
             for driver_id in self.driver_ids:
                 exps, preds, probs, all_res, all_probs = self.experiment1(driver_id)
 
